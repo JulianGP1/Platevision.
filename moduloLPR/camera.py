@@ -59,7 +59,7 @@ def camara_vigilancia():
                         # Filtro de precisión: Solo registramos si EasyOCR está seguro a más del 50%
                         if prob > 0.5:
                             texto_placa = text.upper().replace(" ", "").replace("-", "")
-                            if len(texto_placa) < 5: # Evitar falsos positivos de texto muy corto
+                            if len(texto_placa) !=6: # Evitar falsos positivos de texto muy corto
                                 continue
                             
                             
