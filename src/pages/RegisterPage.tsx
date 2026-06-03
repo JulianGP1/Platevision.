@@ -64,6 +64,7 @@ export default function RegisterPage() {
       ? 'bg-surface border border-surface-border text-white placeholder:text-slate-600 focus:border-accent/50'
       : 'bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-accent/50'
   }`;
+  
 
   return (
     <div className={`min-h-screen flex items-center justify-center px-4 py-12 ${isDark ? 'bg-[#0f1117]' : 'bg-[#F8FAFC]'}`}>

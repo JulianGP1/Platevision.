@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../ThemeContext';
 import { Link } from 'react-router-dom';
 import { ScanLine, LogOut, Monitor, Activity, Car, Cpu, Settings, Wifi, WifiOff, X, Check } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIGURACIÓN — cambiar aquí si el puerto o host del backend varía
@@ -294,8 +296,12 @@ export default function DashboardPage() {
   const { isDark } = useTheme();
   const { user, logout } = useAuth();
 
-  // ── Estado de detecciones (vendrá de BD en el futuro) ──────────────────────
+  // ── Estado de detecciones ──────────────────────────────────────────────────
+  // Mantenemos tu tipado estricto <Deteccion[]> en lugar de any[]
   const [historial, setHistorial] = useState<Deteccion[]>([]);
+
+  // PARA EVITAR DUPLICADOS (Traído de tu amigo)
+  const ultimaPlacaGuardada = useRef<string>("");
 
   // ── Estado del servidor / cámara ───────────────────────────────────────────
   const [status, setStatus] = useState<ServerStatus | null>(null);
@@ -303,25 +309,52 @@ export default function DashboardPage() {
   // ── UI ─────────────────────────────────────────────────────────────────────
   const [showConfig, setShowConfig] = useState(false);
 
-  // ── Polling de detecciones + status cada 2s ────────────────────────────────
-  // TODO (BD): reemplazar api.getDetecciones() por llamada al endpoint
-  //            de tu API REST que consulte la tabla `detecciones`
+  // ── FUNCIÓN PARA GUARDAR EN SUPABASE (Traído de tu amigo) ──────────────────
+  const registrarVehiculo = async (placa: string, dueno: string) => {
+    const { error } = await supabase
+      .from('vehiculos')
+      .insert([{ placa, dueno }]);
+
+    if (error) {
+      console.error("Error guardando:", error.message);
+    } else {
+      console.log("Vehículo guardado :", placa);
+    }
+  };
+
+  // ── CONEXIÓN CON FLASK + GUARDADO ─────────────────────────────────────────
   useEffect(() => {
     const poll = async () => {
       try {
-        const [detecciones, estado] = await Promise.all([
-          api.getDetecciones(),
-          api.getStatus(),
-        ]);
-        setHistorial(detecciones);
+        // 1. Consultamos Flask para las detecciones (Cambio de tu amigo) y tu API para el estatus en paralelo
+        const respuesta = await fetch('http://localhost:5000/api/detecciones');
+        const datos = await respuesta.json();
+        
+        const estado = await api.getStatus(); // Mantenemos tu verificación de estado
+
+        setHistorial(datos);
         setStatus(estado);
-      } catch {
+
+        // 2. Lógica de tu amigo: GUARDAR SOLO LA ÚLTIMA PLACA EN SUPABASE SIN DUPLICAR
+        if (datos.length > 0) {
+          const placa = datos[0].placa;
+
+          if (placa && placa !== ultimaPlacaGuardada.current) {
+            await registrarVehiculo(placa, "Desconocido");
+            ultimaPlacaGuardada.current = placa;
+          }
+        }
+
+      } catch (error) {
+        console.error("Error en el polling:", error);
+        // Mantenemos tu manejo de estado cuando el servidor se cae
         setStatus(prev => prev ? { ...prev, conectado: false } : null);
       }
     };
 
     poll();
-    const intervalo = setInterval(poll, 2000);
+    // Lo dejamos a 1 o 2 segundos según prefieran (1000ms es más rápido para detectar autos)
+    const intervalo = setInterval(poll, 1000); 
     return () => clearInterval(intervalo);
   }, []);
 
@@ -329,23 +362,23 @@ export default function DashboardPage() {
   const ultimaDeteccion = historial[0];
   const conectado = status?.conectado ?? false;
 
-  // ── Estadísticas (en el futuro vendrán de la BD) ───────────────────────────
+// ── Estadísticas (en el futuro vendrán de la BD) ───────────────────────────
   // TODO (BD): calcular `deteccionesHoy` con WHERE fecha = hoy
   //            y `precisionPromedio` con AVG(precision_ocr)
   const stats = [
-    { label: 'Cámaras activas',      value: conectado ? '1' : '0', icon: Monitor },
-    { label: 'Detecciones hoy',      value: historial.length.toString(), icon: Activity },
+    { label: 'Cámaras activas',       value: conectado ? '1' : '0', icon: Monitor },
+    { label: 'Detecciones hoy',       value: historial.length.toString(), icon: Activity },
     { label: 'Vehículos registrados', value: historial.length.toString(), icon: Car },
-    {
-      label: 'Precisión promedio',
-      value: ultimaDeteccion ? `${ultimaDeteccion.precision_ocr}%` : '--',
-      icon: Cpu,
+    { 
+      label: 'Precisión promedio', 
+      value: ultimaDeteccion ? `${ultimaDeteccion.precision_ocr}%` : '--', 
+      icon: Cpu 
     },
   ];
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-[#0f1117]' : 'bg-[#F8FAFC]'}`}>
-
+      
       {/* ── Top bar ── */}
       <header className={`sticky top-0 z-40 backdrop-blur-xl border-b
         ${isDark ? 'bg-[#0f1117]/80 border-surface-border' : 'bg-white/80 border-slate-200'}`}>
@@ -357,20 +390,17 @@ export default function DashboardPage() {
               <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} font-medium ml-1.5`}>LPR</span>
             </span>
           </Link>
-
-          <div className="flex items-center gap-3">
-            {/* Badge estado conexión */}
+<div className="flex items-center gap-3">
+            {/* Badge estado conexión (Mantenemos el tuyo) */}
             <div className={`hidden sm:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border
               ${conectado
                 ? 'bg-green-500/10 border-green-500/20 text-green-400'
                 : 'bg-orange-500/10 border-orange-500/20 text-orange-400'}`}>
-              {conectado
-                ? <Wifi className="w-3 h-3" />
-                : <WifiOff className="w-3 h-3" />}
+              {conectado ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
               {conectado ? 'Conectado' : 'Sin señal'}
             </div>
 
-            {/* Botón configurar cámara */}
+            {/* Botón configurar cámara (Mantenemos el tuyo) */}
             <button
               onClick={() => setShowConfig(true)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-all border
@@ -384,6 +414,7 @@ export default function DashboardPage() {
             <span className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
               {user?.email}
             </span>
+
             <button
               onClick={logout}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200
@@ -395,6 +426,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
+      {/* MAIN */}
       <main className="max-w-7xl mx-auto px-6 py-10">
         <h1 className={`text-2xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
           Dashboard
@@ -412,7 +444,7 @@ export default function DashboardPage() {
                 <div className="w-9 h-9 rounded-lg bg-accent/8 border border-accent/15 flex items-center justify-center">
                   <stat.icon className="w-4 h-4 text-accent-light" />
                 </div>
-                <span className={`text-xs font-medium ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
+                <span className={`text-xs font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                   {stat.label}
                 </span>
               </div>
@@ -426,21 +458,22 @@ export default function DashboardPage() {
         {/* ── Panel LPR ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
 
-          {/* Stream en vivo */}
+          {/* Stream en vivo (Mezclamos tus estilos con la ruta Flask de tu amigo) */}
           <div className={`rounded-xl p-6 border
             ${isDark ? 'bg-surface-raised border-surface-border' : 'bg-white border-slate-200'}`}>
             <h2 className={`text-base font-medium mb-4 ${isDark ? 'text-white' : 'text-slate-900'}`}>
               Cámara en vivo
             </h2>
-            <CamaraStream isDark={isDark} conectado={conectado} />
+            <div className="relative w-full rounded-lg overflow-hidden border border-slate-700">
+              <img src="http://localhost:5000/video_feed" className="w-full h-auto" alt="Video feed Flask" />
+            </div>
 
-            {/* Error de conexión si lo hay */}
             {!conectado && status?.error && (
               <p className="text-xs text-orange-400 mt-2">{status.error}</p>
             )}
           </div>
 
-          {/* Última detección */}
+          {/* Última detección (Tus estilos completos) */}
           <div className={`rounded-xl p-6 border
             ${isDark ? 'bg-surface-raised border-surface-border' : 'bg-white border-slate-200'}`}>
             <h2 className={`text-base font-medium mb-4 ${isDark ? 'text-white' : 'text-slate-900'}`}>
@@ -473,8 +506,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Historial de tránsito — ocupa las 3 columnas */}
-          {/* TODO (BD): reemplazar `historial` por consulta paginada a la tabla `detecciones` */}
+          {/* Historial de tránsito (Tu hermosa tabla estilizada) */}
           <div className={`rounded-xl p-6 border lg:col-span-3
             ${isDark ? 'bg-surface-raised border-surface-border' : 'bg-white border-slate-200'}`}>
             <h2 className={`text-base font-medium mb-4 ${isDark ? 'text-white' : 'text-slate-900'}`}>
@@ -522,16 +554,13 @@ export default function DashboardPage() {
         </div>
       </main>
 
-      {/* ── Modal configuración cámara ── */}
+      {/* ── Modal configuración cámara (Mantenemos el tuyo) ── */}
       {showConfig && (
         <ConfigCamaraModal
           isDark={isDark}
           configActual={status?.config}
           onClose={() => setShowConfig(false)}
-          onAplicar={() => {
-            // Al aplicar nueva config, el status se actualizará solo en el próximo poll
-            setShowConfig(false);
-          }}
+          onAplicar={() => setShowConfig(false)}
         />
       )}
     </div>

@@ -6,7 +6,7 @@ import datetime
 import easyocr
 import base64
 import threading
-
+import re 
 app = Flask(__name__)
 CORS(app)
 
@@ -58,8 +58,8 @@ def camara_vigilancia():
                     for (bbox, text, prob) in ocr_result:
                         # Filtro de precisión: Solo registramos si EasyOCR está seguro a más del 50%
                         if prob > 0.5:
-                            texto_placa = text.upper().replace(" ", "").replace("-", "")
-                            if len(texto_placa) < 5: # Evitar falsos positivos de texto muy corto
+                            texto_placa = re.sub(r'[^A-Z0-9]', '', text.upper())
+                            if len(texto_placa) <5 : # Evitar falsos positivos de texto muy corto
                                 continue
                             
                             
@@ -83,7 +83,7 @@ def camara_vigilancia():
                                 "precision_yolo": round(confianza_yolo * 100, 2),
                                 "foto": f"data:image/jpeg;base64,{img_base64}" # Formato directo para React
                             }
-                            
+                          
                             # Insertar al principio de la lista para que React vea primero lo más nuevo
                             historial_detecciones.insert(0, nueva_deteccion)
                             print(f"[NUEVA DETECCIÓN]: {texto_placa} - Precisión: {nueva_deteccion['precision_ocr']}%")
